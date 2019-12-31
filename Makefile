@@ -20,7 +20,7 @@ PARSEARGS ?=
 default: easy-rv-c easy-rv-parser
 
 #convert C build instruction to C target
-c_mon: $(PROJECT)
+c_mon: default $(PROJECT)
 
 #convert verilog build instruction to verilog target
 verilog_mon: $(PROJECT)_V

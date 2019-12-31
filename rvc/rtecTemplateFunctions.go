@@ -1,10 +1,11 @@
-package rtec
+package rvc
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/PRETgroup/easy-rte/rtedef"
+	"github.com/PRETgroup/easy-rv/rvdef"
 )
 
 //CECCTransition is used with getCECCTransitionCondition to return results to the template
@@ -15,7 +16,7 @@ type CECCTransition struct {
 
 //getCECCTransitionCondition returns the C "if" condition to use in state machine next state logic and associated events
 // returns "full condition", "associated events"
-func getCECCTransitionCondition(function rtedef.EnforcedFunction, trans string) CECCTransition {
+func getCECCTransitionCondition(function rvdef.Monitor, trans string) CECCTransition {
 	var events []string
 
 	re1 := regexp.MustCompile("([<>=!]+)")          //for capturing operators
@@ -48,20 +49,11 @@ func getCECCTransitionCondition(function rtedef.EnforcedFunction, trans string) 
 			return in
 		}
 
-		//check to see if it is input data
-		if function.InputVars != nil {
-			for _, Var := range function.InputVars {
+		//check to see if it is io data
+		if function.InterfaceList != nil {
+			for _, Var := range function.InterfaceList {
 				if Var.Name == in {
-					return "inputs->" + in
-				}
-			}
-		}
-
-		//check to see if it is output data
-		if function.OutputVars != nil {
-			for _, Var := range function.OutputVars {
-				if Var.Name == in {
-					return "outputs->" + in
+					return "io->" + in
 				}
 			}
 		}
@@ -88,33 +80,17 @@ func getCECCTransitionCondition(function rtedef.EnforcedFunction, trans string) 
 	return CECCTransition{IfCond: retVal, AssEvents: events}
 }
 
-//getPolicyEnfInfo will get a PEnforcer for a given policy
-func getPolicyEnfInfo(function rtedef.EnforcedFunction, policyIndex int) *rtedef.PEnforcer {
-	enfPol, err := rtedef.MakePEnforcer(function.InterfaceList, function.Policies[policyIndex])
+//getPolicyMonInfo will get a PEnforcer for a given policy
+func getPolicyMonInfo(function rvdef.Monitor, policyIndex int) *rvdef.PMonitor {
+	pmon, err := rvdef.MakePMonitor(function.InterfaceList, function.Policies[policyIndex])
 	if err != nil {
-		return nil
+		fmt.Printf("ERROR: The policy %s is broken! Message: %s", function.Policies[policyIndex].Name, err.Error())
+		panic(err)
 	}
 	//Uncomment these two lines to generate the intermediate enforcer JSON file
 	//bytes, _ := json.MarshalIndent(enfPol, "", "\t")
 	//ioutil.WriteFile(function.Name+".json", bytes, 0644)
-	return enfPol
-}
-
-//getAllPolicyEnfInfo will get a PEnforcer for a given policy
-func getAllPolicyEnfInfo(function rtedef.EnforcedFunction) []rtedef.PEnforcer {
-	pols := make([]rtedef.PEnforcer, 0, len(function.Policies))
-	for i := 0; i < len(function.Policies); i++ {
-		enfPol, err := rtedef.MakePEnforcer(function.InterfaceList, function.Policies[i])
-		if err != nil {
-			return nil
-		}
-		pols = append(pols, *enfPol)
-	}
-
-	//Uncomment these two lines to generate the intermediate enforcer JSON file
-	//bytes, _ := json.MarshalIndent(enfPol, "", "\t")
-	//ioutil.WriteFile(function.Name+".json", bytes, 0644)
-	return pols
+	return pmon
 }
 
 func sub(a, b int) int {

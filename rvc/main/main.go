@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/PRETgroup/easy-rte/rtec"
+	"github.com/PRETgroup/easy-rv/rvc"
 )
 
 var (
@@ -34,7 +34,7 @@ func main() {
 	// 	return
 	// }
 
-	conv, err := rtec.New(*language)
+	conv, err := rvc.New(*language)
 	if err != nil {
 		fmt.Println("Error creating converter:", err.Error())
 		return

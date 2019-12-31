@@ -10,8 +10,8 @@
 *.xml
 main/main
 
-easy-rte-c
-easy-rte-parser
+easy-rv-c
+easy-rv-parser
 
 #ignore built examples 
 example_*

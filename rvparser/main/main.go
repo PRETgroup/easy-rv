@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
-	"github.com/PRETgroup/easy-rte/rtedef"
-
-	"github.com/PRETgroup/easy-rte/rteparser"
+	"github.com/PRETgroup/easy-rv/rvparser"
 )
 
 var (
@@ -87,26 +85,12 @@ func main() {
 		fmt.Printf("Error reading file '%s' for conversion: %s\n", *inFileName, err.Error())
 		return
 	}
-	mfbs, parseErr := rteparser.ParseString(*inFileName, string(sourceFile))
+	mfbs, parseErr := rvparser.ParseString(*inFileName, string(sourceFile))
 	if parseErr != nil {
 		fmt.Printf("Error during parsing file '%s': %s\n", *inFileName, parseErr.Error())
 		return
 	}
 	for _, fun := range mfbs {
-
-		if *policyProduct {
-			if len(fun.Policies) > 1 {
-				finalPolicy := fun.Policies[0]
-				for i := 1; i < len(fun.Policies); i++ {
-					finalPolicy, err = fun.PolicyProduct(finalPolicy, fun.Policies[i])
-					if err != nil {
-						fmt.Printf("Error taking product of policies in '%s': %s\n", *inFileName, parseErr.Error())
-						return
-					}
-				}
-				fun.Policies = []rtedef.Policy{finalPolicy}
-			}
-		}
 
 		// name := fun.Name
 		// extn := outputExtension

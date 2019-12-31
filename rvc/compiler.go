@@ -1,19 +1,18 @@
-package rtec
+package rvc
 
 import (
 	"bytes"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"strings"
 	"text/template"
 
-	"github.com/PRETgroup/easy-rte/rtedef"
+	"github.com/PRETgroup/easy-rv/rvdef"
 )
 
 //Converter is the struct we use to store all functions for conversion (and what we operate from)
 type Converter struct {
-	Funcs     []rtedef.EnforcedFunction
+	Funcs     []rvdef.Monitor
 	Language  string
 	templates *template.Template
 }
@@ -22,12 +21,9 @@ type Converter struct {
 func New(language string) (*Converter, error) {
 	switch strings.ToLower(language) {
 	case "c":
-		return &Converter{Funcs: make([]rtedef.EnforcedFunction, 0), Language: "c", templates: cTemplates}, nil
-	case "vhdl":
-		fmt.Println("WARNING: VHDL compilation support is currently not working due to problems with the VHDL type system. Try Verilog instead.")
-		return &Converter{Funcs: make([]rtedef.EnforcedFunction, 0), Language: "vhdl", templates: vhdlTemplates}, nil
-	case "verilog":
-		return &Converter{Funcs: make([]rtedef.EnforcedFunction, 0), Language: "verilog", templates: verilogTemplates}, nil
+		return &Converter{Funcs: make([]rvdef.Monitor, 0), Language: "c", templates: cTemplates}, nil
+		//	case "verilog":
+		//		return &Converter{Funcs: make([]rvdef.Monitor, 0), Language: "verilog", templates: verilogTemplates}, nil
 	default:
 		return nil, errors.New("Language " + language + " is not supported")
 	}
@@ -35,9 +31,9 @@ func New(language string) (*Converter, error) {
 
 //AddFunction should be called for each Function in the project
 func (c *Converter) AddFunction(functionbytes []byte) error {
-	FB := rtedef.EnforcedFunction{}
+	FB := rvdef.Monitor{}
 	if err := xml.Unmarshal(functionbytes, &FB); err != nil {
-		return errors.New("Couldn't unmarshal EnforcedFunction xml: " + err.Error())
+		return errors.New("Couldn't unmarshal Monitor xml: " + err.Error())
 	}
 
 	c.Funcs = append(c.Funcs, FB)
@@ -55,7 +51,7 @@ type OutputFile struct {
 //TemplateData is the structure used to hold data being passed into the templating engine
 type TemplateData struct {
 	FunctionIndex int
-	Functions     []rtedef.EnforcedFunction
+	Functions     []rvdef.Monitor
 }
 
 //ConvertAll converts iec61499 xml (stored as []FB) into vhdl []byte for each block (becomes []VHDLOutput struct)
@@ -76,19 +72,14 @@ func (c *Converter) ConvertAll() ([]OutputFile, error) {
 		templates = []templateInfo{
 			{"F_", "functionC", "c"},
 			{"F_", "functionH", "h"},
-			{"cbmc_main_", "mainCBMCC", "c"},
+			//{"cbmc_main_", "mainCBMCC", "c"},
 		}
 	}
-	if c.Language == "vhdl" {
-		templates = []templateInfo{
-			{"F_", "functionVhdl", "vhdl"},
-		}
-	}
-	if c.Language == "verilog" {
-		templates = []templateInfo{
-			{"test_F_", "functionVerilog", "sv"},
-		}
-	}
+	// if c.Language == "verilog" {
+	// 	templates = []templateInfo{
+	// 		{"test_F_", "functionVerilog", "sv"},
+	// 	}
+	// }
 	for _, template := range templates {
 		for i := 0; i < len(c.Funcs); i++ {
 

@@ -1,74 +1,25 @@
-package rtec
+package rvc
 
 import (
 	"text/template"
 
-	"github.com/PRETgroup/goFB/goFB/stconverter"
+	"github.com/PRETgroup/stcompilerlib"
 )
 
-const rtecTemplate = `{{define "_policyIn"}}{{$block := .}}
-//input policies
-{{range $polI, $pol := $block.Policies}}{{$pfbEnf := getPolicyEnfInfo $block $polI}}
-{{if not $pfbEnf}}//{{$pol.Name}} is broken!
-{{else}}{{/* this is where the policy comes in */}}//INPUT POLICY {{$pol.Name}} BEGIN
-//This will run the input enforcer for {{$block.Name}}'s policy {{$pol.Name}}
-void {{$block.Name}}_run_input_enforcer_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs) {
-	switch(me->_policy_{{$pol.Name}}_state) {
-		{{range $sti, $st := $pol.States}}case POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$st.Name}}:
-			{{range $tri, $tr := $pfbEnf.InputPolicy.GetViolationTransitions}}{{if eq $tr.Source $st.Name}}{{/*
-			*/}}
-			if({{$cond := getCECCTransitionCondition $block (compileExpression $tr.STGuard)}}{{$cond.IfCond}}) {
-				//transition {{$tr.Source}} -> {{$tr.Destination}} on {{$tr.Condition}}
-				//select a transition to solve the problem
-				{{$solution := $pfbEnf.SolveViolationTransition $tr true}}
-				{{if $solution.Comment}}//{{$solution.Comment}}{{end}}
-				{{range $soleI, $sole := $solution.Expressions}}{{$sol := getCECCTransitionCondition $block (compileExpression $sole)}}{{$sol.IfCond}};
-				{{end}}
-			} {{end}}{{end}}
-			
-			break;
-
-		{{end}}
-	}
-}
-{{end}}
-//INPUT POLICY {{$pol.Name}} END
-{{end}}{{end}}
-
-{{define "_policyOut"}}{{$block := .}}
+const rvcCTemplate = `{{define "_policyUpd"}}{{$block := .}}
 //output policies
-{{range $polI, $pol := $block.Policies}}{{$pfbEnf := getPolicyEnfInfo $block $polI}}
-{{if not $pfbEnf}}//{{$pol.Name}} is broken!
-{{else}}{{/* this is where the policy comes in */}}//OUTPUT POLICY {{$pol.Name}} BEGIN
-//This will run the input enforcer for {{$block.Name}}'s policy {{$pol.Name}}
-void {{$block.Name}}_run_output_enforcer_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs) {
+{{range $polI, $pol := $block.Policies}}{{$pfbMon := getPolicyMonInfo $block $polI}}
+//POLICY {{$pol.Name}} BEGIN
+//This will run the monitor for {{$block.Name}}'s policy {{$pol.Name}}
+void {{$block.Name}}_run_monitor_{{$pol.Name}}(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io) {
 	//advance timers
-	{{range $varI, $var := $pfbEnf.OutputPolicy.GetDTimers}}
+	{{range $varI, $var := $pfbMon.Policy.GetDTimers}}
 	me->{{$var.Name}}++;{{end}}
-	
-	//run enforcer
-	switch(me->_policy_{{$pol.Name}}_state) {
-		{{range $sti, $st := $pol.States}}case POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$st.Name}}:
-			{{range $tri, $tr := $pfbEnf.OutputPolicy.GetViolationTransitions}}{{if eq $tr.Source $st.Name}}{{/*
-			*/}}
-			if({{$cond := getCECCTransitionCondition $block (compileExpression $tr.STGuard)}}{{$cond.IfCond}}) {
-				//transition {{$tr.Source}} -> {{$tr.Destination}} on {{$tr.Condition}}
-				//select a transition to solve the problem
-				{{$solution := $pfbEnf.SolveViolationTransition $tr false}}
-				{{if $solution.Comment}}//{{$solution.Comment}}{{end}}
-				{{range $soleI, $sole := $solution.Expressions}}{{$sol := getCECCTransitionCondition $block (compileExpression $sole)}}{{$sol.IfCond}};
-				{{end}}
-			} {{end}}{{end}}
-
-			break;
-
-		{{end}}
-	}
 
 	//select transition to advance state
 	switch(me->_policy_{{$pol.Name}}_state) {
 		{{range $sti, $st := $pol.States}}case POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$st.Name}}:
-			{{range $tri, $tr := $pfbEnf.OutputPolicy.Transitions}}{{if eq $tr.Source $st.Name}}{{/*
+			{{range $tri, $tr := $pfbMon.Policy.Transitions}}{{if eq $tr.Source $st.Name}}{{/*
 			*/}}
 			if({{$cond := getCECCTransitionCondition $block (compileExpression $tr.STGuard)}}{{$cond.IfCond}}) {
 				//transition {{$tr.Source}} -> {{$tr.Destination}} on {{$tr.Condition}}
@@ -80,19 +31,15 @@ void {{$block.Name}}_run_output_enforcer_{{$pol.Name}}(enforcervars_{{$block.Nam
 			} {{end}}{{end}}
 			
 			//ensure a transition was taken in this state
-			assert(false && "{{$block.Name}}_{{$pol.Name}}_{{$st.Name}} must take a transition"); //if we are still here, then no transition was taken and we are no longer satisfying liveness
+			//assert(false && "{{$block.Name}}_{{$pol.Name}}_{{$st.Name}} must take a transition"); //if we are still here, then no transition was taken and we are no longer satisfying liveness
 
 			break;
 
 		{{end}}
 	}
-
-	//ensure we did not violate (i.e. we did not enter violation state)
-	assert(me->_policy_{{$pol.Name}}_state != POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_violation);
 }
 {{end}}
-//OUTPUT POLICY {{$pol.Name}} END
-{{end}}
+//OUTPUT POLICY {{/* $pol.Name */}} END
 {{end}}
 
 {{define "functionH"}}{{$block := index .Functions .FunctionIndex}}{{$blocks := .Functions}}
@@ -109,32 +56,24 @@ typedef uint64_t dtimer_t;
 //For each policy, we need an enum type for the state machine
 {{range $polI, $pol := $block.Policies}}
 enum {{$block.Name}}_policy_{{$pol.Name}}_states { {{if len $pol.States}}{{range $index, $state := $pol.States}}{{if $index}}, {{end}}
-	POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$state}}{{end}}{{else}}POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_unknown{{end}},
-	POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_violation 
+	POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$state.Name}}{{end}}{{else}}POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_unknown{{end}}
 };
 {{end}}
 
-//Inputs to the function {{$block.Name}}
+//IO to the function {{$block.Name}}
 typedef struct {
-	{{range $index, $var := $block.InputVars}}{{$var.Type}} {{$var.Name}}{{if $var.ArraySize}}[{{$var.ArraySize}}]{{end}};
+	{{range $index, $var := $block.InterfaceList}}{{$var.Type}} {{$var.Name}}{{if $var.ArraySize}}[{{$var.ArraySize}}]{{end}};
 	{{end}}
-} inputs_{{$block.Name}}_t;
+} io_{{$block.Name}}_t;
 
-//Outputs from the function {{$block.Name}}
-typedef struct {
-	{{range $index, $var := $block.OutputVars}}{{$var.Type}} {{$var.Name}}{{if $var.ArraySize}}[{{$var.ArraySize}}]{{end}};
-	{{end}}
-} outputs_{{$block.Name}}_t;
-
-//enforcer state and vars:
+//monitor state and vars:
 typedef struct {
 	{{range $polI, $pol := $block.Policies}}enum {{$block.Name}}_policy_{{$pol.Name}}_states _policy_{{$pol.Name}}_state;
-	{{$pfbEnf := getPolicyEnfInfo $block $polI}}{{if not $pfbEnf}}//Policy is broken!{{else}}//internal vars
-	{{range $vari, $var := $pfbEnf.OutputPolicy.InternalVars}}{{if not $var.Constant}}{{$var.Type}} {{$var.Name}}{{if $var.ArraySize}}[{{$var.ArraySize}}]{{end}};
+	//internal vars
+	{{range $vari, $var := $pol.InternalVars}}{{if not $var.Constant}}{{$var.Type}} {{$var.Name}}{{if $var.ArraySize}}[{{$var.ArraySize}}]{{end}};
 	{{end}}{{end}}
 	{{end}}
-	{{end}}
-} enforcervars_{{$block.Name}}_t;
+} monitorvars_{{$block.Name}}_t;
 
 {{range $polI, $pol := $block.Policies -}}
 {{range $varI, $var := $pol.InternalVars -}}
@@ -143,36 +82,31 @@ typedef struct {
 
 //This function is provided in "F_{{$block.Name}}.c"
 //It sets up the variable structures to their initial values
-void {{$block.Name}}_init_all_vars(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs);
+void {{$block.Name}}_init_all_vars(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io);
 
 //This function is provided in "F_{{$block.Name}}.c"
-//It will run the synthesised enforcer and call the controller function
-void {{$block.Name}}_run_via_enforcer(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs);
+//It will run the synthesised monitor and call the controller function
+void {{$block.Name}}_run_via_monitor(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io);
 
 //This function is provided from the user
 //It is the controller function
-extern void {{$block.Name}}_run(inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs);
+extern void {{$block.Name}}_run(io_{{$block.Name}}_t* inputs);
 
-//enforcer functions
+//monitor functions
 
 {{range $polI, $pol := $block.Policies}}
 //This function is provided in "F_{{$block.Name}}.c"
-//It will run the input enforcer for {{$block.Name}}'s policy {{$pol.Name}}
-void {{$block.Name}}_run_input_enforcer_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs);
+//It will run the monitor for {{$block.Name}}'s policy {{$pol.Name}}
+void {{$block.Name}}_run_monitor_{{$pol.Name}}(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io);
 
 //This function is provided in "F_{{$block.Name}}.c"
-//It will run the input enforcer for {{$block.Name}}'s policy {{$pol.Name}}
-void {{$block.Name}}_run_output_enforcer_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs);
-
-//This function is provided in "F_{{$block.Name}}.c"
-//It will check the state of the enforcer monitor code
+//It will check the state of the monitor monitor code
 //It returns one of the following:
-//0: currently true (safe)
-//1: always true (safe)
-//-1: currently false (unsafe)
-//-2: always false (unsafe)
-//It will need to do some reachability analysis to achieve this
-int {{$block.Name}}_check_rv_status_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me);
+//0: always true (safe)
+//1: currently true (safe)
+//2: currently false (unsafe)
+//3: always false (unsafe)
+uint8_t {{$block.Name}}_check_rv_status_{{$pol.Name}}(monitorvars_{{$block.Name}}_t* me);
 
 {{end}}
 {{end}}
@@ -182,55 +116,51 @@ int {{$block.Name}}_check_rv_status_{{$pol.Name}}(enforcervars_{{$block.Name}}_t
 //This is autogenerated code. Edit by hand at your peril!
 #include "F_{{$block.Name}}.h"
 
-void {{$block.Name}}_init_all_vars(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs) {
-	//set any input vars with default values
-	{{range $index, $var := $block.InputVars}}{{if $var.InitialValue}}{{$initialArray := $var.GetInitialArray}}{{if $initialArray}}{{range $initialIndex, $initialValue := $initialArray}}inputs->{{$var.Name}}[{{$initialIndex}}] = {{$initialValue}};
+void {{$block.Name}}_init_all_vars(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io) {
+	//set any IO vars with default values
+	{{range $index, $var := $block.InterfaceList}}{{if $var.InitialValue}}{{$initialArray := $var.GetInitialArray}}{{if $initialArray}}{{range $initialIndex, $initialValue := $initialArray}}inputs->{{$var.Name}}[{{$initialIndex}}] = {{$initialValue}};
 	{{end}}{{else}}inputs->{{$var.Name}} = {{$var.InitialValue}};
-	{{end}}{{end}}{{end}}
-	//set any output vars with default values
-	{{range $index, $var := $block.OutputVars}}{{if $var.InitialValue}}{{$initialArray := $var.GetInitialArray}}{{if $initialArray}}{{range $initialIndex, $initialValue := $initialArray}}outputs->{{$var.Name}}[{{$initialIndex}}] = {{$initialValue}};
-	{{end}}{{else}}outputs->{{$var.Name}} = {{$var.InitialValue}};
 	{{end}}{{end}}{{end}}
 
 	{{if $block.Policies}}{{range $polI, $pol := $block.Policies}}
 	me->_policy_{{$pol.Name}}_state = {{if $pol.States}}POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{(index $pol.States 0).Name}}{{else}}POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_unknown{{end}};
-	{{$pfbEnf := getPolicyEnfInfo $block $polI}}{{if not $pfbEnf}}//Policy is broken!{{else}}//input policy internal vars
-	{{range $vari, $var := $pfbEnf.OutputPolicy.InternalVars}}{{if not $var.Constant}}
+	//input policy internal vars
+	{{range $vari, $var := $pol.InternalVars}}{{if not $var.Constant}}
 	{{$initialArray := $var.GetInitialArray}}{{if $initialArray}}{{range $initialIndex, $initialValue := $initialArray}}me->{{$var.Name}}[{{$initialIndex}}] = {{$initialValue}};
 	{{end}}{{else}}me->{{$var.Name}} = {{if $var.InitialValue}}{{$var.InitialValue}}{{else}}0{{end}};
-	{{end}}{{end}}{{end}}{{end}}
+	{{end}}{{end}}{{end}}
 	{{end}}{{end}}
 }
 
-void {{$block.Name}}_run_via_enforcer(enforcervars_{{$block.Name}}_t* me, inputs_{{$block.Name}}_t* inputs, outputs_{{$block.Name}}_t* outputs) {
-	//run the policies in reverse order for the inputs (last policies have highest priority)
-	{{$lpol := len $block.Policies}}
-	{{range $polI, $pol_unused := $block.Policies}}{{$acti := sub (sub $lpol 1) $polI}}{{$pol := index $block.Policies $acti}} {{$block.Name}}_run_input_enforcer_{{$pol.Name}}(me, inputs);
-	{{end}}
+void {{$block.Name}}_run_via_monitor(monitorvars_{{$block.Name}}_t* me, io_{{$block.Name}}_t* io) {
+	{{$block.Name}}_run(io);
 
-	{{$block.Name}}_run(inputs, outputs);
-
-	//run policies in specified order for outputs
-	{{range $polI, $pol := $block.Policies}}{{$block.Name}}_run_output_enforcer_{{$pol.Name}}(me, inputs,outputs);
+	//run policies in specified order
+	{{range $polI, $pol := $block.Policies}}{{$block.Name}}_run_monitor_{{$pol.Name}}(me, io);
 	{{end}}
 }
 
-{{if $block.Policies}}{{template "_policyIn" $block}}{{end}}
 
-{{if $block.Policies}}{{template "_policyOut" $block}}{{end}}
+{{if $block.Policies}}{{template "_policyUpd" $block}}{{end}}
 
+{{range $polI, $pol := $block.Policies}} {{$pfbMon := getPolicyMonInfo $block $polI}}
 //This function is provided in "F_{{$block.Name}}.c"
-//It will check the state of the enforcer monitor code
+//It will check the state of the monitor monitor code
 //It returns one of the following:
-//0: currently true (safe)
-//1: always true (safe)
-//-1: currently false (unsafe)
-//-2: always false (unsafe)
-//It will need to do some reachability analysis to achieve this
-{{/*int {{$block.Name}}_check_rv_status_{{$pol.Name}}(enforcervars_{{$block.Name}}_t* me) {
-	//TODO: this function
-	return -2;
-}*/}}
+//0: always true (safe)
+//1: currently true (safe)
+//2: currently false (unsafe)
+//3: always false (unsafe)
+uint8_t {{$block.Name}}_check_rv_status_{{$pol.Name}}(monitorvars_{{$block.Name}}_t* me) { 
+	switch(me->_policy_{{$pol.Name}}_state) { 
+		{{range $sti, $st := $pol.States}}case POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$st.Name}}:
+			{{if $st.Accepting}} {{if $pfbMon.Policy.GetTransitionsForSource $st.Name}} return 1; {{else}} return 0; {{end -}}
+			{{else}} {{if $pfbMon.Policy.GetTransitionsForSource $st.Name}} return 2; {{else}} return 3; {{end -}}
+			{{end}}
+		{{end}}
+	}
+}
+{{end}}
 {{end}}
 {{define "mainCBMCC"}}{{$block := index .Functions .FunctionIndex}}{{$blocks := .Functions}}
 //This file should be called cbmc_main_{{$block.Name}}.c
@@ -249,7 +179,7 @@ int main() {
 
 {{range $blockI, $block := $blocks}}
 	//I/O and state for {{$block.Name}}
-	enforcervars_{{$block.Name}}_t enf_{{$block.Name}};
+	monitorvars_{{$block.Name}}_t enf_{{$block.Name}};
     inputs_{{$block.Name}}_t inputs_{{$block.Name}};
     outputs_{{$block.Name}}_t outputs_{{$block.Name}};
 
@@ -263,7 +193,7 @@ int main() {
 	inputs_{{$block.Name}}.{{$input.Name}} = nondet_{{$block.Name}}_input_{{$inputI}}();
 	{{end}}
 
-	//randomise enforcer state, i.e. clock values and position (excepting violation state)
+	//randomise monitor state, i.e. clock values and position (excepting violation state)
 	{{range $polI, $pol := $block.Policies -}}
 	{{range $varI, $var := $pol.InternalVars -}}
 	{{if not $var.Constant}}enf_{{$block.Name}}.{{$var.Name}} = nondet_{{$block.Name}}_enf_{{$pol.Name}}_{{$varI}}();{{end}}
@@ -271,8 +201,8 @@ int main() {
 	enf_{{$block.Name}}._policy_{{$pol.Name}}_state = nondet_{{$block.Name}}_enf_{{$pol.Name}}_state() % {{len $pol.States}};
 	{{end}}
 
-    //run the enforcer (i.e. tell CBMC to check this out)
-	{{$block.Name}}_run_via_enforcer(&enf_{{$block.Name}}, &inputs_{{$block.Name}}, &outputs_{{$block.Name}});
+    //run the monitor (i.e. tell CBMC to check this out)
+	{{$block.Name}}_run_via_monitor(&enf_{{$block.Name}}, &inputs_{{$block.Name}}, &outputs_{{$block.Name}});
 {{end}}
 }
 
@@ -291,11 +221,11 @@ void {{$block.Name}}_run(inputs_{{$block.Name}}_t *inputs, outputs_{{$block.Name
 var cTemplateFuncMap = template.FuncMap{
 	"getCECCTransitionCondition": getCECCTransitionCondition,
 
-	"getPolicyEnfInfo": getPolicyEnfInfo,
+	"getPolicyMonInfo": getPolicyMonInfo,
 
-	"compileExpression": stconverter.CCompileExpression,
+	"compileExpression": stcompilerlib.CCompileExpression,
 
 	"sub": sub,
 }
 
-var cTemplates = template.Must(template.New("").Funcs(cTemplateFuncMap).Parse(rtecTemplate))
+var cTemplates = template.Must(template.New("").Funcs(cTemplateFuncMap).Parse(rvcCTemplate))
