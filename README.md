@@ -79,6 +79,20 @@ Easy-rv is based on Structured Text (ST) operators and syntax. When making guard
 | Or             | `\|\|` or OR  |
 | Brackets       | `(` and `)` |
 
+## Example of Use (Pizza)
+
+Let us consider the case of a frozen pizza.
+It has the following lifetime:
+
+![Pizza Lifespan Image](/example/pizza/Easy-RV-Pizza.png)
+
+We can represent this state machine with the following _erv_ specification:
+
+```
+
+
+```
+
 ## Example of Use (AB5)
 
 Imagine a function which inputs boolean `A` and outputs boolean `B`. 
@@ -141,8 +155,6 @@ policy AB5 of ab5 {
 
 			//if we go overtime, or we receive another A, then VIOLATION	
 			-> violation on ((v >= 5) or (A and B) or (A and !B));
-			-> violation on (v >= 5) recover B := 1;
-			-> violation on (A and B) or (A and !B);	
 		}
 
 		done accepting trap;

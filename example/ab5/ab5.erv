@@ -36,8 +36,6 @@ policy AB5 of ab5 {
 
 			//if we go overtime, or we receive another A, then VIOLATION	
 			-> violation on ((v >= 5) or (A and B) or (A and !B));
-			-> violation on (v >= 5);
-			-> violation on (A and B) or (A and !B);	
 		}
 
 		done accepting trap;
