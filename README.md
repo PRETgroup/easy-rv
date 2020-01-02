@@ -42,12 +42,12 @@ becomes
 +-------+                +------------+
 ```
 
-In our case, we can compile our policies to either *C* or *Verilog* code. 
+In our case, we can compile our policies to C code. 
 
 The C monitors are designed to be composed with your software in a system such as a microcontroller or an Arduino.
 
 However, software monitors cannot by their nature monitor the behaviour of the hardware that they run upon. 
-So, in this case you may want to build your monitor to Verilog, and then compose your microcontroller with custom hardware (such as on an FPGA or ASIC) to ensure system correctness.
+Later versions of this tool will support building monitors to Verilog, so that you may compose your microcontroller with custom hardware (such as on an FPGA or ASIC) to ensure system correctness.
 
 ## Build instructions
 
@@ -55,11 +55,7 @@ Download and install the latest version of [Go](https://golang.org/doc/install).
 
 Then, download this repository, and run `make` or `make default`, which will generate the tools. 
 
-* The ab5 example can be generated using `make c_mon PROJECT=ab5`.
-* You can also generate Verilog monitors by using `make verilog_mon PROJECT=ab5`, for example. The Verilog monitors are a little trickier to use, and require I/O connections to be provided to them. They do not embed a function call to the controller inside.
-* If you are interested in using the model checkers:
-  * Obtain CBMC (C model checker) by running `sudo apt install cbmc`. Website here: https://www.cprover.org/cbmc/
-  * Obtain EBMC (Verilog model checker) by going to website https://www.cprover.org/ebmc/
+* The pizza example can be generated using `make c_mon PROJECT=pizza`.
 
 ## A note on Easy-rv language
 
@@ -204,6 +200,8 @@ With _easy-rv_, this process is completed automatically in two steps. Firstly, w
 
 Then, we convert this policy XML file into executable code, which is written in C. 
 * `./easy-rv-c -i example/pizza/pizza.xml -o example/pizza`
+
+This entire example is provided in the `/example/pizza` folder of this repository, including an example top level file, and can be built from the root directory using `make c_mon PROJECT=pizza`.
 
 Now, we can provide a `main.c` file which has our controller and plant interface code in it, and then compile the project together. In our case this is called `pizza_main.c`, and provides an example trace of temperatures (and will print the status of the monitor):
 
