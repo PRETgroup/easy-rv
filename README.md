@@ -81,17 +81,206 @@ Easy-rv is based on Structured Text (ST) operators and syntax. When making guard
 
 ## Example of Use (Pizza)
 
-Let us consider the case of a frozen pizza.
-It has the following lifetime:
+Let us consider the case of a frozen pizza. 
+We define a food safety property via the following discrete timed automata:
 
 ![Pizza Lifespan Image](/example/pizza/Easy-RV-Pizza.png)
 
 We can represent this state machine with the following _erv_ specification:
 
 ```
+monitor pizza;
+interface of pizza {
+    uint32_t t;
+}
 
+policy FoodSafety of pizza {
+    internals {
+        dtimer_t xloc; //local timer (in minutes)
+        dtimer_t xage; //total age of pizza (in minutes)
+
+        constant uint32_t MAX_AGE := 4320;
+    }
+
+    states {
+
+        //the pizza is frozen
+        s_frozen rejecting {
+
+            //the pizza is beginning to warm.
+            -> s_warming on t > 0: xloc := 0, xage := 0;      
+
+            //the pizza is still frozen.
+            -> s_frozen on t <= 0;          
+        }
+
+        //the pizza is cooking
+        s_warming rejecting {
+
+            //the pizza is cooked too hot.
+            -> s_burned on t >= 200;
+
+            //it's taken too long to reheat the pizza.
+            -> s_too_old on xloc > 100;
+
+            //the pizza is cooked and now needs to be cooled.
+            -> s_cooling on t >= 180 and t < 200 and xloc > 20: xloc := 0; 
+
+            //the pizza is still cooking.
+            -> s_warming on t < 180 and xloc < 100;
+        }
+
+        //the pizza is cooling after being cooked.
+        s_cooling rejecting {
+            
+            //the pizza is ready to eat (notice we don't reset the timer.)
+            -> s_ready on t < 50 and xloc <= 60 and xage <= MAX_AGE;
+
+            //the pizza is too old (has been left out too long)
+            -> s_too_old on xloc > 60 or xage > MAX_AGE;
+
+            //the pizza is still too hot to eat
+            -> s_cooling on t >= 50 and xloc <= 60 and xage <= MAX_AGE;
+        }
+
+        //the pizza is ready to eat
+        s_ready accepting {
+
+            //the pizza is still ready to eat
+            -> s_ready on t >= 6 and xloc <= 60 and xage <= MAX_AGE;
+
+            //the pizza is being refridgerated after cooking
+            -> s_fridge on t < 6 and xloc <= 60 and xage <= MAX_AGE: xloc := 0;
+
+            //the pizza is too old (has been left out too long)
+            -> s_too_old on xloc > 60 or xage > MAX_AGE;
+        }
+
+        //the pizza is in the fridge and can still be eaten (some people like cold pizza)
+        s_fridge accepting {
+
+            //the pizza is still in the fridge (no more than 3 days)
+            -> s_fridge on t <= 6 and xage <= MAX_AGE;
+
+            //the pizza is being reheated
+            -> s_reheating on t >= 6 and xage <= MAX_AGE: xloc := 0;
+
+            //the pizza is too old (has been left in the fridge too long)
+            -> s_too_old on xage > MAX_AGE;
+        }
+
+        //the pizza is being reheated
+        s_reheating rejecting {
+
+            //the pizza is still being reheated
+            -> s_reheating on t < 100 and xloc < 100;
+
+            //the pizza is ready to be cooled
+            -> s_cooling on t > 100 and t < 200 and xloc <= 100: xloc := 0;
+
+            //it's taken too long to reheat the pizza.
+            -> s_too_old on xloc > 100;
+
+            //the pizza is burned
+            -> s_burned on t >= 200;
+        }
+
+        //the pizza is burned
+        s_burned rejecting trap; //no way to recover this.
+
+        //the pizza is too old
+        s_too_old rejecting trap; //no way to recover this.
+    }
+}
 
 ```
+
+As can be seen, this can be thought of as a simple mealy finite state machine, which provides the rules for correct operation.
+
+We may now compile this system to executable code.
+
+With _easy-rv_, this process is completed automatically in two steps. Firstly, we convert the _erv_ file into an equivalent policy XML file (which makes it easier to understand, and allows portability between tools).
+* `./easy-rv-parser  -i example/pizza/pizza.erv -o example/pizza/pizza.xml`
+
+Then, we convert this policy XML file into executable code, which is written in C. 
+* `./easy-rv-c -i example/pizza/pizza.xml -o example/pizza`
+
+Now, we can provide a `main.c` file which has our controller and plant interface code in it, and then compile the project together. In our case this is called `pizza_main.c`, and provides an example trace of temperatures (and will print the status of the monitor):
+
+```c
+//pizza_main.c contents:
+#include "F_pizza.h"
+#include <stdio.h>
+#include <stdint.h>
+
+void print_data(uint32_t count, monitorvars_pizza_t mon, io_pizza_t io) {
+    printf("Tick %6d: temp:%5d C, STATE: (%4d, %4ld, %4ld), STATUS (Can Eat?):", count, io.t, mon._policy_FoodSafety_state, mon.xloc, mon.xage);
+    switch(pizza_check_rv_status_FoodSafety(&mon)) {
+        case 0: printf("TRUE"); break;
+        case 1: printf("CURRENTLY TRUE"); break;
+        case 2: printf("CURRENTLY FALSE"); break;
+        default: printf("FALSE"); break;
+    }
+    printf("\r\n");
+}
+
+int main() {
+    monitorvars_pizza_t mon;
+    io_pizza_t io;
+    
+    pizza_init_all_vars(&mon, &io);
+
+    uint32_t count = 0;
+    io.t = 0;
+    while(count++ < 100) {
+        if(count == 2) io.t = 5; //start heating the pizza
+        if(count == 5) io.t = 10;
+        if(count == 15) io.t = 30;
+        if(count == 20) io.t = 60;
+        if(count == 25) io.t = 180; //pizza fully heated, remove from oven
+        if(count == 30) io.t = 140;
+        if(count == 35) io.t = 40; //pizza is cooled enough to eat
+
+        //wait here until pizza expires
+
+        pizza_run_via_monitor(&mon, &io);
+
+        print_data(count, mon, io);
+    }
+}
+
+void pizza_run(io_pizza_t *io) {
+    //nothing to do, the pizza has no operations
+}
+```
+
+If we run this example, it will present us an example trace:
+
+```
+Tick      1: temp:    0 C, STATE: (   0,    1,    1), STATUS (Can Eat?):CURRENTLY FALSE
+Tick      2: temp:    5 C, STATE: (   1,    0,    0), STATUS (Can Eat?):CURRENTLY FALSE
+Tick      3: temp:    5 C, STATE: (   1,    1,    1), STATUS (Can Eat?):CURRENTLY FALSE
+.....
+Tick     22: temp:   60 C, STATE: (   1,   20,   20), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     23: temp:   60 C, STATE: (   1,   21,   21), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     24: temp:   60 C, STATE: (   1,   22,   22), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     25: temp:  180 C, STATE: (   2,    0,   23), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     26: temp:  180 C, STATE: (   2,    1,   24), STATUS (Can Eat?):CURRENTLY FALSE
+.....
+Tick     33: temp:  140 C, STATE: (   2,    8,   31), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     34: temp:  140 C, STATE: (   2,    9,   32), STATUS (Can Eat?):CURRENTLY FALSE
+Tick     35: temp:   40 C, STATE: (   3,   10,   33), STATUS (Can Eat?):CURRENTLY TRUE
+Tick     36: temp:   40 C, STATE: (   3,   11,   34), STATUS (Can Eat?):CURRENTLY TRUE
+....
+Tick     84: temp:   40 C, STATE: (   3,   59,   82), STATUS (Can Eat?):CURRENTLY TRUE
+Tick     85: temp:   40 C, STATE: (   3,   60,   83), STATUS (Can Eat?):CURRENTLY TRUE
+Tick     86: temp:   40 C, STATE: (   7,   61,   84), STATUS (Can Eat?):FALSE
+Tick     87: temp:   40 C, STATE: (   7,   62,   85), STATUS (Can Eat?):FALSE
+....
+
+```
+
+To compile it together with the example main file, run `make c_mon c_build PROJECT=pizza`
 
 ## Example of Use (AB5)
 
@@ -164,19 +353,5 @@ policy AB5 of ab5 {
 }
 ```
 
-As can be seen, this can be thought of as a simple mealy finite state machine, which provides the rules for correct operation.
 
-We may now compile this system to executable code.
-
-With _easy-rv_, this process is completed automatically in two steps. Firstly, we convert the _erv_ file into an equivalent policy XML file (which makes it easier to understand, and allows portability between tools).
-* `./easy-rv-parser -i example/ab5 -o example/ab5`
-
-Then, we convert this policy XML file into executable code, which is written in C. 
-* `./easy-rv-c -i example/ab5 -o example/ab5`
-
-Now, we can provide a `main.c` file which has our controller and plant interface code in it, and then compile the project together.
-
-This entire example is provided in the `/example/ab5` folder of this repository, including an example top level file, and can be built from the root directory using `make c_mon PROJECT=ab5`.
-
-To compile it together with the example main file, run `make c_mon c_build PROJECT=ab5`
 

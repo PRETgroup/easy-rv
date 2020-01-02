@@ -1,0 +1,103 @@
+monitor pizza;
+interface of pizza {
+    uint32_t t;
+}
+
+policy FoodSafety of pizza {
+    internals {
+        dtimer_t xloc; //local timer (in minutes)
+        dtimer_t xage; //total age of pizza (in minutes)
+
+        constant uint32_t MAX_AGE := 4320;
+    }
+
+    states {
+
+        //the pizza is frozen
+        s_frozen rejecting {
+
+            //the pizza is beginning to warm.
+            -> s_warming on t > 0: xloc := 0, xage := 0;      
+
+            //the pizza is still frozen.
+            -> s_frozen on t <= 0;          
+        }
+
+        //the pizza is cooking
+        s_warming rejecting {
+
+            //the pizza is cooked too hot.
+            -> s_burned on t >= 200;
+
+            //it's taken too long to reheat the pizza.
+            -> s_too_old on xloc > 100;
+
+            //the pizza is cooked and now needs to be cooled.
+            -> s_cooling on t >= 180 and t < 200 and xloc > 20: xloc := 0; 
+
+            //the pizza is still cooking.
+            -> s_warming on t < 180 and xloc < 100;
+        }
+
+        //the pizza is cooling after being cooked.
+        s_cooling rejecting {
+            
+            //the pizza is ready to eat (notice we don't reset the timer.)
+            -> s_ready on t < 50 and xloc <= 60 and xage <= MAX_AGE;
+
+            //the pizza is too old (has been left out too long)
+            -> s_too_old on xloc > 60 or xage > MAX_AGE;
+
+            //the pizza is still too hot to eat
+            -> s_cooling on t >= 50 and xloc <= 60 and xage <= MAX_AGE;
+        }
+
+        //the pizza is ready to eat
+        s_ready accepting {
+
+            //the pizza is still ready to eat
+            -> s_ready on t >= 6 and xloc <= 60 and xage <= MAX_AGE;
+
+            //the pizza is being refridgerated after cooking
+            -> s_fridge on t < 6 and xloc <= 60 and xage <= MAX_AGE: xloc := 0;
+
+            //the pizza is too old (has been left out too long)
+            -> s_too_old on xloc > 60 or xage > MAX_AGE;
+        }
+
+        //the pizza is in the fridge and can still be eaten (some people like cold pizza)
+        s_fridge accepting {
+
+            //the pizza is still in the fridge (no more than 3 days)
+            -> s_fridge on t <= 6 and xage <= MAX_AGE;
+
+            //the pizza is being reheated
+            -> s_reheating on t >= 6 and xage <= MAX_AGE: xloc := 0;
+
+            //the pizza is too old (has been left in the fridge too long)
+            -> s_too_old on xage > MAX_AGE;
+        }
+
+        //the pizza is being reheated
+        s_reheating rejecting {
+
+            //the pizza is still being reheated
+            -> s_reheating on t < 100 and xloc < 100;
+
+            //the pizza is ready to be cooled
+            -> s_cooling on t > 100 and t < 200 and xloc <= 100: xloc := 0;
+
+            //it's taken too long to reheat the pizza.
+            -> s_too_old on xloc > 100;
+
+            //the pizza is burned
+            -> s_burned on t >= 200;
+        }
+
+        //the pizza is burned
+        s_burned rejecting trap; //no way to recover this.
+
+        //the pizza is too old
+        s_too_old rejecting trap; //no way to recover this.
+    }
+}
