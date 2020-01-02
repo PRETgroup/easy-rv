@@ -21,3 +21,4 @@ example/*/*
 !*.erv
 !*main.c
 !*.md
+!*.png
