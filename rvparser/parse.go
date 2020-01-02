@@ -180,8 +180,8 @@ func isValidType(s string) bool {
 		s == "int64_t" ||
 		s == "float" ||
 		s == "double" ||
-		s == "dtimer_t" ||
-		s == "rtimer_t" {
+		s == "dtimer_t" { //||
+		//		s == "rtimer_t" { //rtimer is planned but not supported at this stage.
 		return true
 	}
 	return false

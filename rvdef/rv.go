@@ -73,8 +73,9 @@ type Policy struct {
 
 //PState is a state in the policy specification of an enforcerFB
 type PState struct {
-	Name      string
-	Accepting bool
+	Name            string
+	FinalStatusType bool //if set to true, this stops being "currently xxx" and becomes just "xxx" when checking state
+	Accepting       bool //if set to true, this returns "true" when checking state, if set to false, it returns "false"
 }
 
 //PTransition is a transition between PState in a Policy (mealy machine transitions)

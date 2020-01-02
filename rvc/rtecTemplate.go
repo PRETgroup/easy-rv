@@ -154,8 +154,8 @@ void {{$block.Name}}_run_via_monitor(monitorvars_{{$block.Name}}_t* me, io_{{$bl
 uint8_t {{$block.Name}}_check_rv_status_{{$pol.Name}}(monitorvars_{{$block.Name}}_t* me) { 
 	switch(me->_policy_{{$pol.Name}}_state) { 
 		{{range $sti, $st := $pol.States}}case POLICY_STATE_{{$block.Name}}_{{$pol.Name}}_{{$st.Name}}:
-			{{if $st.Accepting}} {{if $pfbMon.Policy.GetTransitionsForSource $st.Name}} return 1; {{else}} return 0; {{end -}}
-			{{else}} {{if $pfbMon.Policy.GetTransitionsForSource $st.Name}} return 2; {{else}} return 3; {{end -}}
+			{{if $st.Accepting}} {{if $st.FinalStatusType}} return 0; {{else}} return 1; {{end -}}
+			{{else}} {{if $st.FinalStatusType}} return 3; {{else}} return 2; {{end -}}
 			{{end}}
 		{{end}}
 	}

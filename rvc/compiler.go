@@ -57,6 +57,14 @@ type TemplateData struct {
 //ConvertAll converts iec61499 xml (stored as []FB) into vhdl []byte for each block (becomes []VHDLOutput struct)
 //Returns nil error on success
 func (c *Converter) ConvertAll() ([]OutputFile, error) {
+
+	//first, finalise the states
+	for i := 0; i < len(c.Funcs); i++ {
+		for j := 0; j < len(c.Funcs[i].Policies); j++ {
+			c.Funcs[i].Policies[j].FinaliseStates()
+		}
+	}
+
 	finishedConversions := make([]OutputFile, 0, len(c.Funcs))
 
 	type templateInfo struct {
