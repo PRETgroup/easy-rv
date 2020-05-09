@@ -27,6 +27,7 @@ verilog_mon: $(PROJECT)_V
 
 easy-rv-c: rvc/* rvdef/*
 	go get github.com/PRETgroup/stcompilerlib
+	go get github.com/PRETgroup/easy-rv/rvc
 	go build -o easy-rv-c -i ./rvc/main
 
 easy-rv-parser: rvparser/* rvdef/*
